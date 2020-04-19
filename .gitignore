@@ -1,0 +1,7 @@
+dump/
+.env
+.DS_Store
+node_modules/
+*.swp
+
+dev-config.json

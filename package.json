@@ -1,0 +1,23 @@
+{
+  "name": "prm-backup-job",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dannycho7/prm-backup-job.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/dannycho7/prm-backup-job/issues"
+  },
+  "homepage": "https://github.com/dannycho7/prm-backup-job#readme",
+  "dependencies": {
+    "adm-zip": "^0.4.14",
+    "dotenv": "^8.2.0"
+  }
+}
