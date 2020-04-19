@@ -1,7 +1,8 @@
 {
     "BACKUP_FILES_PATH": "",
-    "SMTP_IP_ADDR": "",
-    "SMTP_PORT": "",
-    "SMTP_USERNAME": "",
-    "SMTP_PASSWORD": ""
+    "SFTP_IP_ADDR": "",
+    "SFTP_PORT": "",
+    "SFTP_USERNAME": "",
+    "SFTP_PASSWORD": "",
+    "SFTP_EXPORT_DESTINATION_PATH": ""
 }

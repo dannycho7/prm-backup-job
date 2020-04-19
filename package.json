@@ -18,6 +18,10 @@
   "homepage": "https://github.com/dannycho7/prm-backup-job#readme",
   "dependencies": {
     "adm-zip": "^0.4.14",
-    "dotenv": "^8.2.0"
+    "dotenv": "^8.2.0",
+    "mkdirp": "^1.0.4",
+    "moment": "^2.24.0",
+    "rimraf": "^3.0.2",
+    "ssh2-sftp-client": "^5.1.2"
   }
 }
