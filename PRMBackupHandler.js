@@ -3,6 +3,7 @@ const { promises: fsPromises } = fs;
 const path = require("path");
 
 const archiver = require('archiver');
+const bytes = require('bytes');
 const mkdirp = require("mkdirp");
 const moment = require("moment");
 const progress = require("progress-stream");
@@ -35,9 +36,9 @@ class PRMBackupHandler {
         return moment(time).format('YYYYMMDD-HHmm');
     }
 
-    async sendReport(isSuccess, outputFilePath, timeStart, timeEnd) {
+    async sendReport(isSuccess, outputFilePath, outputFileSize, timeStart, timeEnd) {
         let subjectStr = `[${this.config.USERNAME}] Backup ${isSuccess ? `success!` : "failed!"}`;
-        let bodyPrefix = isSuccess ? `Saved backup to ${outputFilePath}.` : "Try running manually to diagnose the issue.";
+        let bodyPrefix = isSuccess ? `Saved ${bytes(outputFileSize)} backup to ${outputFilePath}.` : "Try running manually to diagnose the issue.";
         let body = `${bodyPrefix}\nStarted ${this.getFormattedTimeStr(timeStart)}. Ended ${this.getFormattedTimeStr(timeEnd)}`
 
         const msg = {
@@ -144,11 +145,12 @@ class PRMBackupHandler {
         }));
 
         archive.finalize();
-        var isSuccess = false, outputFilePath;
+        var isSuccess = false, outputFilePath, outputFileSize;
 
         return zipFilePromise
             .then(async () => {
-                console.log(`Finished file compression! Exporting via SFTP`)
+                outputFileSize = (await fsPromises.stat(zipFilePath)).size;
+                console.log(`Finished file compression! Exporting via SFTP`);
                 outputFilePath = await this.exportFile(zipFilePath);
             })
             .then(() => {
@@ -163,7 +165,7 @@ class PRMBackupHandler {
             })
             .finally(() => {
                 let timeEnd = new Date();
-                this.sendReport(isSuccess, outputFilePath, timeStart, timeEnd);
+                this.sendReport(isSuccess, outputFilePath, outputFileSize, timeStart, timeEnd);
             });
     }
 };

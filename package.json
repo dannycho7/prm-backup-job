@@ -23,6 +23,7 @@
   "dependencies": {
     "@sendgrid/mail": "^7.0.1",
     "archiver": "^4.0.1",
+    "bytes": "^3.1.0",
     "dotenv": "^8.2.0",
     "mkdirp": "^1.0.4",
     "moment": "^2.24.0",
