@@ -5,6 +5,7 @@ const path = require("path");
 const archiver = require('archiver');
 const mkdirp = require("mkdirp");
 const moment = require("moment");
+const progress = require("progress-stream");
 const rimraf = require("rimraf");
 const SFTPClient = require("ssh2-sftp-client");
 const sgMail = require('@sendgrid/mail');
@@ -121,9 +122,18 @@ class PRMBackupHandler {
 
         await Promise.all(fileNames.map(async (fileName) => {
             let filePath = path.join(this.config.BACKUP_FILES_PATH, fileName);
-            let fileStat = await fsPromises.stat(filePath)
-            if (!fileStat.isDirectory()) {
-                archive.append(fs.createReadStream(filePath), { name: fileName });
+            let stat = await fsPromises.stat(filePath);
+            if (!stat.isDirectory()) {
+                let progressStream = progress({
+                    length: stat.size,
+                    time: 1000 /* ms */
+                });
+
+                progressStream.on('progress', (progress) => {
+                    console.log(`Progress for ${fileName}: ${JSON.stringify(progress)}`);
+                });
+
+                archive.append(fs.createReadStream(filePath).pipe(progressStream), { name: fileName });
             }
         }));
 
