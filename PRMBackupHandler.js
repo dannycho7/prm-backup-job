@@ -31,15 +31,20 @@ class PRMBackupHandler {
         }
     }
 
-    async sendReport(isSuccess, outputFilePath) {
+    getFormattedTimeStr(time) {
+        return moment(time).format('YYYYMMDD-HHmm');
+    }
+
+    async sendReport(isSuccess, outputFilePath, timeStart, timeEnd) {
         let subjectStr = `[${this.config.USERNAME}] Backup ${isSuccess ? `success!` : "failed!"}`;
-        let msgStr = isSuccess ? `Saved backup to ${outputFilePath}.` : "Try running manually to diagnose the issue.";
+        let bodyPrefix = isSuccess ? `Saved backup to ${outputFilePath}.` : "Try running manually to diagnose the issue.";
+        let body = `${bodyPrefix}\nStarted ${this.getFormattedTimeStr(timeStart)}. Ended ${this.getFormattedTimeStr(timeEnd)}`
 
         const msg = {
             to: this.config.REPORT_EMAIL,
             from: 'prm-backup-handler@dannycho.me',
             subject: subjectStr,
-            text: msgStr,
+            text: body,
         };
 
         await sgMail.send(msg).then(() => {
@@ -80,6 +85,7 @@ class PRMBackupHandler {
 
     async backup() {
         console.log("Starting backup");
+        let timeStart = new Date();
         try {
             var fileNames = await fsPromises.readdir(this.config.BACKUP_FILES_PATH);
         } catch (err) {
@@ -90,7 +96,7 @@ class PRMBackupHandler {
         const prmTempFileDir = path.join(this.config.BACKUP_FILES_PATH, ".prm-temp");
         await mkdirp(prmTempFileDir);
 
-        const dateStr = moment(new Date()).format('YYYYMMDD-HHmm');
+        const dateStr = this.getFormattedTimeStr(new Date());
         const zipFilePath = path.join(prmTempFileDir, `backup-${dateStr}.zip`);
 
         console.log(`Starting compression of files into and saving to ${zipFilePath}`);
@@ -156,7 +162,8 @@ class PRMBackupHandler {
                 console.error(err);
             })
             .finally(() => {
-                this.sendReport(isSuccess, outputFilePath);
+                let timeEnd = new Date();
+                this.sendReport(isSuccess, outputFilePath, timeStart, timeEnd);
             });
     }
 };
