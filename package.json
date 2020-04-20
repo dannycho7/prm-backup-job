@@ -21,6 +21,7 @@
   },
   "homepage": "https://github.com/dannycho7/prm-backup-job#readme",
   "dependencies": {
+    "@sendgrid/mail": "^7.0.1",
     "archiver": "^4.0.1",
     "dotenv": "^8.2.0",
     "mkdirp": "^1.0.4",

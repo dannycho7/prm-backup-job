@@ -1,8 +1,11 @@
 {
+    "USERNAME": "",
     "BACKUP_FILES_PATH": "",
     "SFTP_IP_ADDR": "",
     "SFTP_PORT": "",
     "SFTP_USERNAME": "",
     "SFTP_PASSWORD": "",
-    "SFTP_EXPORT_DESTINATION_PATH": ""
+    "SFTP_EXPORT_DESTINATION_PATH": "",
+    "SENDGRID_API_KEY": "",
+    "REPORT_EMAIL": ""
 }

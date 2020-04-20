@@ -7,12 +7,14 @@ const mkdirp = require("mkdirp");
 const moment = require("moment");
 const rimraf = require("rimraf");
 const SFTPClient = require("ssh2-sftp-client");
+const sgMail = require('@sendgrid/mail');
 
 class PRMBackupHandler {
     constructor(config) {
         this.validateConfig(config);
         this.config = config;
         this.sftp = new SFTPClient('PRMBackupHandler');
+        sgMail.setApiKey(this.config.SENDGRID_API_KEY);
     }
 
     validateConfig(config) {
@@ -26,6 +28,25 @@ class PRMBackupHandler {
                 throw new Error(`Invalid value for ${k}: ${v}`);
             }
         }
+    }
+
+    async sendReport(isSuccess, outputFilePath) {
+        let subjectStr = `[${this.config.USERNAME}] Backup ${isSuccess ? `success!` : "failed!"}`;
+        let msgStr = isSuccess ? `Saved backup to ${outputFilePath}.` : "Try running manually to diagnose the issue.";
+
+        const msg = {
+            to: this.config.REPORT_EMAIL,
+            from: 'prm-backup-handler@dannycho.me',
+            subject: subjectStr,
+            text: msgStr,
+        };
+
+        await sgMail.send(msg).then(() => {
+            console.log("Successfully sent email report!");
+        })
+            .catch((err) => {
+                console.error(err);
+            });
     }
 
     async exportFile(srcFilePath) {
@@ -52,6 +73,8 @@ class PRMBackupHandler {
             .finally(() => {
                 this.sftp.end();
             });
+
+        return outputFilePath;
     }
 
     async backup() {
@@ -105,15 +128,25 @@ class PRMBackupHandler {
         }));
 
         archive.finalize();
+        var isSuccess = false, outputFilePath;
 
         return zipFilePromise
-            .then(() => {
+            .then(async () => {
                 console.log(`Finished file compression! Exporting via SFTP`)
-                return this.exportFile(zipFilePath);
+                outputFilePath = await this.exportFile(zipFilePath);
             })
             .then(() => {
                 // cleanup temp directory after backup finishes
                 return new Promise((resolve, reject) => rimraf(prmTempFileDir, resolve));
+            })
+            .then(() => {
+                isSuccess = true;
+            })
+            .catch((err) => {
+                console.error(err);
+            })
+            .finally(() => {
+                this.sendReport(isSuccess, outputFilePath);
             });
     }
 };
