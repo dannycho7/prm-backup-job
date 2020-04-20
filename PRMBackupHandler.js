@@ -1,11 +1,11 @@
-const fsPromises = require("fs").promises;
+const fs = require("fs");
+const { promises: fsPromises } = fs;
 const path = require("path");
 
+const archiver = require('archiver');
 const mkdirp = require("mkdirp");
 const moment = require("moment");
 const rimraf = require("rimraf");
-
-const AdmZip = require("adm-zip");
 const SFTPClient = require("ssh2-sftp-client");
 
 class PRMBackupHandler {
@@ -55,6 +55,7 @@ class PRMBackupHandler {
     }
 
     async backup() {
+        console.log("Starting backup");
         try {
             var fileNames = await fsPromises.readdir(this.config.BACKUP_FILES_PATH);
         } catch (err) {
@@ -65,23 +66,55 @@ class PRMBackupHandler {
         const prmTempFileDir = path.join(this.config.BACKUP_FILES_PATH, ".prm-temp");
         await mkdirp(prmTempFileDir);
 
-        let zip = new AdmZip();
+        const dateStr = moment(new Date()).format('YYYYMMDD-HHmm');
+        const zipFilePath = path.join(prmTempFileDir, `backup-${dateStr}.zip`);
+
+        console.log(`Starting compression of files into and saving to ${zipFilePath}`);
+
+        let zipFileOutput = fs.createWriteStream(zipFilePath);
+        let archive = archiver('zip', {
+            zlib: { level: 9 } // Sets the compression level.
+        });
+
+        let zipFilePromise = new Promise((resolve, reject) => {
+            archive.on('warning', (err) => {
+                if (err.code === 'ENOENT') {
+                    console.warn(err);
+                } else {
+                    reject(err);
+                }
+            });
+
+            archive.on('error', (err) => {
+                reject(err);
+            });
+
+            zipFileOutput.on('close', () => {
+                resolve();
+            });
+        });
+
+        archive.pipe(zipFileOutput);
+
         await Promise.all(fileNames.map(async (fileName) => {
             let filePath = path.join(this.config.BACKUP_FILES_PATH, fileName);
             let fileStat = await fsPromises.stat(filePath)
             if (!fileStat.isDirectory()) {
-                zip.addLocalFile(filePath);
+                archive.append(fs.createReadStream(filePath), { name: fileName });
             }
         }));
 
-        const dateStr = moment(new Date()).format('YYYYMMDD-HHmm');
-        const zipFilePath = path.join(prmTempFileDir, `backup-${dateStr}.zip`);
-        zip.writeZip(zipFilePath);
+        archive.finalize();
 
-        await this.exportFile(zipFilePath);
-
-        // cleanup temp directory after backup finishes
-        return new Promise((resolve, reject) => rimraf(prmTempFileDir, resolve));
+        return zipFilePromise
+            .then(() => {
+                console.log(`Finished file compression! Exporting via SFTP`)
+                return this.exportFile(zipFilePath);
+            })
+            .then(() => {
+                // cleanup temp directory after backup finishes
+                return new Promise((resolve, reject) => rimraf(prmTempFileDir, resolve));
+            });
     }
 };
 
