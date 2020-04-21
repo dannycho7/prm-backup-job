@@ -4,10 +4,8 @@ const path = require("path");
 
 const archiver = require('archiver');
 const bytes = require('bytes');
-const mkdirp = require("mkdirp");
 const moment = require("moment");
 const progress = require("progress-stream");
-const rimraf = require("rimraf");
 const SFTPClient = require("ssh2-sftp-client");
 const sgMail = require('@sendgrid/mail');
 
@@ -56,12 +54,13 @@ class PRMBackupHandler {
             });
     }
 
-    async exportFile(srcFilePath) {
-        const outputFileName = path.parse(srcFilePath).base;
+    async exportFile(srcFileStream) {
+        const dateStr = this.getFormattedTimeStr(new Date());
+        const outputFileName = `backup-${dateStr}.zip`;
         const outputFilePath = path.join(this.config.SFTP_EXPORT_DESTINATION_PATH, outputFileName);
-        console.log(`Attempting to upload ${srcFilePath} and saving to ${outputFilePath}...`);
+        console.log(`Attempting to upload to ${outputFilePath}...`);
 
-        await this.sftp.connect({
+        return this.sftp.connect({
             host: this.config.SFTP_IP_ADDR,
             port: this.config.SFTP_PORT,
             username: this.config.SFTP_USERNAME,
@@ -69,19 +68,19 @@ class PRMBackupHandler {
         })
             .then(() => {
                 console.log("Connection success");
-                return this.sftp.fastPut(srcFilePath, outputFilePath);
+                return this.sftp.put(srcFileStream, outputFilePath);
             })
             .then(() => {
                 console.log("Upload success");
+                return this.sftp.stat(outputFilePath);
             })
-            .catch(err => {
-                console.error(`Error: ${err.message}`);
+            .then((stat) => {
+                return { outputFilePath, outputFileSize: stat.size };
             })
             .finally(() => {
                 this.sftp.end();
             });
 
-        return outputFilePath;
     }
 
     async backup() {
@@ -94,38 +93,21 @@ class PRMBackupHandler {
 
         }
 
-        const prmTempFileDir = path.join(this.config.BACKUP_FILES_PATH, ".prm-temp");
-        await mkdirp(prmTempFileDir);
-
-        const dateStr = this.getFormattedTimeStr(new Date());
-        const zipFilePath = path.join(prmTempFileDir, `backup-${dateStr}.zip`);
-
-        console.log(`Starting compression of files into and saving to ${zipFilePath}`);
-
-        let zipFileOutput = fs.createWriteStream(zipFilePath);
         let archive = archiver('zip', {
             zlib: { level: 9 } // Sets the compression level.
         });
 
-        let zipFilePromise = new Promise((resolve, reject) => {
-            archive.on('warning', (err) => {
-                if (err.code === 'ENOENT') {
-                    console.warn(err);
-                } else {
-                    reject(err);
-                }
-            });
-
-            archive.on('error', (err) => {
-                reject(err);
-            });
-
-            zipFileOutput.on('close', () => {
-                resolve();
-            });
+        archive.on('warning', (err) => {
+            if (err.code === 'ENOENT') {
+                console.warn(err);
+            } else {
+                console.error(err);
+            }
         });
 
-        archive.pipe(zipFileOutput);
+        archive.on('error', (err) => {
+            console.error(err);
+        });
 
         await Promise.all(fileNames.map(async (fileName) => {
             let filePath = path.join(this.config.BACKUP_FILES_PATH, fileName);
@@ -145,28 +127,16 @@ class PRMBackupHandler {
         }));
 
         archive.finalize();
-        var isSuccess = false, outputFilePath, outputFileSize;
+        var isSuccess = false;
+        try {
+            var { outputFilePath, outputFileSize } = await this.exportFile(archive);
+            isSuccess = true;
+        } catch (err) {
+            console.error(err);
+        }
 
-        return zipFilePromise
-            .then(async () => {
-                outputFileSize = (await fsPromises.stat(zipFilePath)).size;
-                console.log(`Finished file compression! Exporting via SFTP`);
-                outputFilePath = await this.exportFile(zipFilePath);
-            })
-            .then(() => {
-                // cleanup temp directory after backup finishes
-                return new Promise((resolve, reject) => rimraf(prmTempFileDir, resolve));
-            })
-            .then(() => {
-                isSuccess = true;
-            })
-            .catch((err) => {
-                console.error(err);
-            })
-            .finally(() => {
-                let timeEnd = new Date();
-                this.sendReport(isSuccess, outputFilePath, outputFileSize, timeStart, timeEnd);
-            });
+        let timeEnd = new Date();
+        await this.sendReport(isSuccess, outputFilePath, outputFileSize, timeStart, timeEnd);
     }
 };
 
