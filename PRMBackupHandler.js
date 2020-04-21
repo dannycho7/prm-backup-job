@@ -38,27 +38,38 @@ class PRMBackupHandler {
         return moment(time).format('YYYY-MM-DD HH:mm');
     }
 
+    async sendEmail(subject, body) {
+        const msg = {
+            to: this.config.REPORT_EMAIL,
+            from: 'prm-backup-handler@dannycho.me',
+            subject: subject,
+            text: body,
+        };
+
+        return sgMail.send(msg).then(() => {
+            console.log("Successfully sent email report!");
+        })
+            .catch((err) => {
+                console.error(err);
+            });
+    }
+
+    async sendNoFilesReport() {
+        let subject = `[${this.config.USERNAME}] No backup initiated!`;
+        let body = `Could not find any files in ${path.resolve(this.config.BACKUP_FILES_PATH)}`;
+
+        return this.sendEmail(subject, body);
+    }
+
     async sendReport(isSuccess, outputFilePath, outputFileSize, timeStart, timeEnd) {
-        let subjectStr = `[${this.config.USERNAME}] Backup ${isSuccess ? `success!` : "failed!"}`;
+        let subject = `[${this.config.USERNAME}] Backup ${isSuccess ? `success!` : "failed!"}`;
         let bodyPrefix = isSuccess ?
             `Saved ${bytes(outputFileSize)} backup to ${outputFilePath}.` :
             "Try running manually to diagnose the issue.";
         let body = `${bodyPrefix}\nStarted: ${this.getFormattedTimeStrForEmail(timeStart)}.\n` +
             `Ended: ${this.getFormattedTimeStrForEmail(timeEnd)}.`
 
-        const msg = {
-            to: this.config.REPORT_EMAIL,
-            from: 'prm-backup-handler@dannycho.me',
-            subject: subjectStr,
-            text: body,
-        };
-
-        await sgMail.send(msg).then(() => {
-            console.log("Successfully sent email report!");
-        })
-            .catch((err) => {
-                console.error(err);
-            });
+        return this.sendEmail(subject, body);
     }
 
     async exportFile(srcFileStream) {
@@ -100,6 +111,10 @@ class PRMBackupHandler {
 
         }
 
+        if (fileNames.length == 0) {
+            return this.sendNoFilesReport();
+        }
+
         let archive = archiver('zip', {
             zlib: { level: 9 } // Sets the compression level.
         });
@@ -127,7 +142,7 @@ class PRMBackupHandler {
 
                 progressStream.on('progress', (progress) => {
                     console.log(`Progress for ${fileName}: ` +
-                        `${progress.percentage}% finished, ` +
+                        `${Number(progress.percentage).toFixed(2)}% finished, ` +
                         `${bytes(progress.transferred)} transferred, ` +
                         `${bytes(progress.remaining)} remaining`);
                 });
