@@ -30,14 +30,21 @@ class PRMBackupHandler {
         }
     }
 
-    getFormattedTimeStr(time) {
+    getFormattedTimeStrForFile(time) {
         return moment(time).format('YYYYMMDD-HHmm');
+    }
+
+    getFormattedTimeStrForEmail(time) {
+        return moment(time).format('YYYY-MM-DD HH:mm');
     }
 
     async sendReport(isSuccess, outputFilePath, outputFileSize, timeStart, timeEnd) {
         let subjectStr = `[${this.config.USERNAME}] Backup ${isSuccess ? `success!` : "failed!"}`;
-        let bodyPrefix = isSuccess ? `Saved ${bytes(outputFileSize)} backup to ${outputFilePath}.` : "Try running manually to diagnose the issue.";
-        let body = `${bodyPrefix}\nStarted ${this.getFormattedTimeStr(timeStart)}. Ended ${this.getFormattedTimeStr(timeEnd)}`
+        let bodyPrefix = isSuccess ?
+            `Saved ${bytes(outputFileSize)} backup to ${outputFilePath}.` :
+            "Try running manually to diagnose the issue.";
+        let body = `${bodyPrefix}\nStarted: ${this.getFormattedTimeStrForEmail(timeStart)}.\n` +
+            `Ended: ${this.getFormattedTimeStrForEmail(timeEnd)}.`
 
         const msg = {
             to: this.config.REPORT_EMAIL,
@@ -55,7 +62,7 @@ class PRMBackupHandler {
     }
 
     async exportFile(srcFileStream) {
-        const dateStr = this.getFormattedTimeStr(new Date());
+        const dateStr = this.getFormattedTimeStrForFile(new Date());
         const outputFileName = `backup-${dateStr}.zip`;
         const outputFilePath = path.join(this.config.SFTP_EXPORT_DESTINATION_PATH, outputFileName);
         console.log(`Attempting to upload to ${outputFilePath}...`);
@@ -119,7 +126,10 @@ class PRMBackupHandler {
                 });
 
                 progressStream.on('progress', (progress) => {
-                    console.log(`Progress for ${fileName}: ${JSON.stringify(progress)}`);
+                    console.log(`Progress for ${fileName}: ` +
+                        `${progress.percentage}% finished, ` +
+                        `${bytes(progress.transferred)} transferred, ` +
+                        `${bytes(progress.remaining)} remaining`);
                 });
 
                 archive.append(fs.createReadStream(filePath).pipe(progressStream), { name: fileName });
@@ -127,16 +137,19 @@ class PRMBackupHandler {
         }));
 
         archive.finalize();
-        var isSuccess = false;
-        try {
-            var { outputFilePath, outputFileSize } = await this.exportFile(archive);
-            isSuccess = true;
-        } catch (err) {
-            console.error(err);
-        }
+        var isSuccess = false, outputFilePath, outputFileSize;
 
-        let timeEnd = new Date();
-        await this.sendReport(isSuccess, outputFilePath, outputFileSize, timeStart, timeEnd);
+        await this.exportFile(archive)
+            .then(stats => {
+                outputFilePath = stats.outputFilePath;
+                outputFileSize = stats.outputFileSize;
+                isSuccess = true;
+            })
+            .catch(err => console.error(err))
+            .finally(() => {
+                let timeEnd = new Date();
+                return this.sendReport(isSuccess, outputFilePath, outputFileSize, timeStart, timeEnd);
+            });
     }
 };
 
