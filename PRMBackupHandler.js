@@ -106,12 +106,24 @@ class PRMBackupHandler {
         let timeStart = new Date();
         try {
             var fileNames = await fsPromises.readdir(this.config.BACKUP_FILES_PATH);
+            // backupFileNames only consists of files that were modified today
+            var backupFileNames = [];
+            await Promise.all(fileNames.map(async fileName => {
+                let stats = await fsPromises.stat(path.join(this.config.BACKUP_FILES_PATH, fileName));
+                if (stats.isDirectory()) {
+                    throw new Error(`Unexpected directory in stat of ${fileName}`);
+                }
+                let mdate = new Date(stats.mtime).toLocaleDateString();
+                let today = new Date().toLocaleDateString();
+                if (mdate == today) {
+                    backupFileNames.push(fileName);
+                }
+            }));
         } catch (err) {
             console.error(err);
-
         }
 
-        if (fileNames.length == 0) {
+        if (backupFileNames.length == 0) {
             return this.sendNoFilesReport();
         }
 
@@ -131,7 +143,7 @@ class PRMBackupHandler {
             console.error(err);
         });
 
-        await Promise.all(fileNames.map(async (fileName) => {
+        await Promise.all(backupFileNames.map(async (fileName) => {
             let filePath = path.join(this.config.BACKUP_FILES_PATH, fileName);
             let stat = await fsPromises.stat(filePath);
             if (!stat.isDirectory()) {
