@@ -2,10 +2,12 @@ const fs = require("fs");
 const { promises: fsPromises } = fs;
 const path = require("path");
 
-const archiver = require('archiver');
-const bytes = require('bytes');
+const archiver = require("archiver");
+const bytes = require("bytes");
+const mkdirp = require("mkdirp")
 const moment = require("moment");
 const progress = require("progress-stream");
+const rimraf = require("rimraf");
 const SFTPClient = require("ssh2-sftp-client");
 const sgMail = require('@sendgrid/mail');
 
@@ -72,7 +74,7 @@ class PRMBackupHandler {
         return this.sendEmail(subject, body);
     }
 
-    async exportFile(srcFileStream) {
+    async exportFile(srcFilePath) {
         const dateStr = this.getFormattedTimeStrForFile(new Date());
         const outputFileName = `backup-${dateStr}.zip`;
         const outputFilePath = path.join(this.config.SFTP_EXPORT_DESTINATION_PATH, outputFileName);
@@ -86,7 +88,11 @@ class PRMBackupHandler {
         })
             .then(() => {
                 console.log("Connection success");
-                return this.sftp.put(srcFileStream, outputFilePath);
+                return this.sftp.fastPut(srcFilePath, outputFilePath, { step: (total_transferred, chunk, total) => {
+                    console.log(`Progress for uploading ${outputFilePath}: `
+                    + `transferred ${bytes(total_transferred)} of ${bytes(total)}`);
+
+                }});
             })
             .then(() => {
                 console.log("Upload success");
@@ -111,10 +117,10 @@ class PRMBackupHandler {
             await Promise.all(fileNames.map(async fileName => {
                 let stats = await fsPromises.stat(path.join(this.config.BACKUP_FILES_PATH, fileName));
                 if (stats.isDirectory()) {
-                    throw new Error(`Unexpected directory in stat of ${fileName}`);
+                    console.warn(`Encountered directory in stat of ${fileName}`);
                 }
                 let mdate = new Date(stats.mtime).toLocaleDateString();
-                let today = new Date().toLocaleDateString();
+                let today = timeStart.toLocaleDateString();
                 if (mdate == today) {
                     backupFileNames.push(fileName);
                 }
@@ -143,6 +149,29 @@ class PRMBackupHandler {
             console.error(err);
         });
 
+        var archiveDirPath = path.join(this.config.BACKUP_FILES_PATH, "prm-backup-job-archives");
+        await mkdirp(archiveDirPath);
+        var archiveFilePath = path.join(archiveDirPath, timeStart.getTime().toString());
+        var archiveFileStream = fs.createWriteStream(archiveFilePath);
+        archiveFileStream.on('close', async () => {
+            var isSuccess = false, outputFilePath, outputFileSize;
+
+            await this.exportFile(archiveFilePath)
+                .then(stats => {
+                    outputFilePath = stats.outputFilePath;
+                    outputFileSize = stats.outputFileSize;
+                    isSuccess = true;
+                })
+                .catch(err => console.error(err))
+                .finally(() => {
+                    let timeEnd = new Date();
+                    return this.sendReport(isSuccess, outputFilePath, outputFileSize, timeStart, timeEnd);
+                });
+            
+            this.cleanup(archiveDirPath);
+        });
+        archive.pipe(archiveFileStream);
+
         await Promise.all(backupFileNames.map(async (fileName) => {
             let filePath = path.join(this.config.BACKUP_FILES_PATH, fileName);
             let stat = await fsPromises.stat(filePath);
@@ -153,7 +182,7 @@ class PRMBackupHandler {
                 });
 
                 progressStream.on('progress', (progress) => {
-                    console.log(`Progress for ${fileName}: ` +
+                    console.log(`Progress for archiving ${fileName}: ` +
                         `${Number(progress.percentage).toFixed(2)}% finished, ` +
                         `${bytes(progress.transferred)} transferred, ` +
                         `${bytes(progress.remaining)} remaining`);
@@ -164,19 +193,45 @@ class PRMBackupHandler {
         }));
 
         archive.finalize();
-        var isSuccess = false, outputFilePath, outputFileSize;
 
-        await this.exportFile(archive)
-            .then(stats => {
-                outputFilePath = stats.outputFilePath;
-                outputFileSize = stats.outputFileSize;
-                isSuccess = true;
+
+    }
+
+    async cleanup(archiveDirPath) {
+        console.log("Cleaning up...");
+        rimraf.sync(archiveDirPath);
+        console.log(`Successfully removed ${archiveDirPath}!`);
+        console.log("Cleanup finished");
+    }
+
+    // DEPRECATED
+    async _exportFileStream(srcFileStream) {
+        const dateStr = this.getFormattedTimeStrForFile(new Date());
+        const outputFileName = `backup-${dateStr}.zip`;
+        const outputFilePath = path.join(this.config.SFTP_EXPORT_DESTINATION_PATH, outputFileName);
+        console.log(`Attempting to upload to ${outputFilePath}...`);
+
+        return this.sftp.connect({
+            host: this.config.SFTP_IP_ADDR,
+            port: this.config.SFTP_PORT,
+            username: this.config.SFTP_USERNAME,
+            password: this.config.SFTP_PASSWORD,
+        })
+            .then(() => {
+                console.log("Connection success");
+                return this.sftp.put(srcFileStream, outputFilePath);
             })
-            .catch(err => console.error(err))
+            .then(() => {
+                console.log("Upload success");
+                return this.sftp.stat(outputFilePath);
+            })
+            .then((stat) => {
+                return { outputFilePath, outputFileSize: stat.size };
+            })
             .finally(() => {
-                let timeEnd = new Date();
-                return this.sendReport(isSuccess, outputFilePath, outputFileSize, timeStart, timeEnd);
+                this.sftp.end();
             });
+
     }
 };
 
