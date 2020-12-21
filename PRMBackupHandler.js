@@ -120,8 +120,10 @@ class PRMBackupHandler {
                     console.warn(`Encountered directory in stat of ${fileName}`);
                 }
                 let mdate = new Date(stats.mtime).toLocaleDateString();
-                let today = timeStart.toLocaleDateString();
-                if (mdate == today) {
+                let today = new Date().toLocaleDateString();
+                // We should only upload files that were created/modified today.
+                const isModifiedToday = mdate == today;
+                if (isModifiedToday) {
                     backupFileNames.push(fileName);
                 }
             }));

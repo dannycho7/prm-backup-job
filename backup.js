@@ -1,12 +1,7 @@
 require("dotenv").config();
 
 const fs = require("fs");
-
-console.log("Attempting to require PRMBackupHandler...");
-
 const PRMBackupHandler = require("./PRMBackupHandler.js");
-
-console.log("Parsing config...");
 
 let configPath = process.env.PRM_BACKUP_CONFIG_PATH;
 if (!configPath) {
